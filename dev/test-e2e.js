@@ -1,0 +1,54 @@
+// Uji end-to-end: 2 perangkat (Kasir di HP, Admin di laptop) melawan simulasi Apps Script.
+// Jalankan dulu: node dev/server.js 8787   lalu: node dev/test-e2e.js [folder-screenshot]
+const { chromium } = require('playwright'); const assert = require('assert');
+const U = 'http://localhost:8787/'; const out = (process.argv[2] || __dirname) + '/';
+(async () => {
+  const b = await chromium.launch(); const errs = [];
+  const mk = async (vp) => {
+    const c = await b.newContext({ viewport: vp, acceptDownloads: true }); const p = await c.newPage();
+    p.on('pageerror', e => errs.push('PAGE ' + e.message));
+    p.on('console', m => { if (m.type() === 'error' && !/fonts|ERR_TUNNEL|ERR_INTERNET|net::/.test(m.text())) errs.push('CON ' + m.text()); });
+    return [c, p];
+  };
+  const [kc, k] = await mk({ width: 390, height: 844 }); await k.goto(U);
+  await k.screenshot({ path: out + 'e-login.png' });
+  await k.fill('#lg-pin', '123456'); await k.click('#login-btn'); await k.waitForSelector('#grid .item');
+  assert((await k.textContent('[data-add="n1"] .st')).includes('Habis'));
+  const [ac, a] = await mk({ width: 1366, height: 860 }); await a.goto(U); await a.click('.seg [data-role=admin]');
+  await a.fill('#lg-email', 'admin@mbosuti.id'); await a.fill('#lg-pin', 'mbosuti123'); await a.click('#login-btn'); await a.waitForSelector('.page-h h2');
+  await a.click('#nav-side [data-r="stok-masuk"]'); await a.selectOption('#in-id', 'n1'); await a.fill('#in-q', '20'); await a.click('#in-form button[type=submit]');
+  await a.waitForSelector('text=terkirim ke semua kasir');
+  await k.waitForFunction(() => document.querySelector('[data-add="n1"] .st').textContent.includes('Sisa 20'), null, { timeout: 8000 });
+  console.log('OK sinkron stok admin -> kasir');
+  await k.click('[data-add="n1"]'); await k.click('[data-add="n1"]'); await k.click('#mbar'); await k.click('#cart-sheet [data-pay]');
+  await k.click('[data-pm="split"]'); await k.check('#pay-ok'); await k.click('#pay-done'); await k.waitForSelector('#rc-prev .receipt');
+  await k.click('[data-cp="2"]'); assert.equal((await k.$$('#rc-prev .receipt')).length, 2); await k.screenshot({ path: out + 'e-struk.png' });
+  await k.click('.sheet-f [data-close]');
+  await k.waitForFunction(() => !JSON.parse(localStorage.getItem('ms_outbox') || '[]').length, null, { timeout: 8000 });
+  console.log('OK penjualan split terkirim, struk 2 rangkap');
+  await kc.setOffline(true); await k.click('[data-add="n1"]'); await k.click('#mbar'); await k.click('#cart-sheet [data-pay]'); await k.click('[data-cash="15000"]'); await k.click('#pay-done');
+  await k.waitForSelector('#rc-prev'); await k.click('.sheet-f [data-close]'); await k.waitForTimeout(500);
+  assert.equal(await k.evaluate(() => JSON.parse(localStorage.getItem('ms_outbox')).length), 1);
+  assert((await k.textContent('[data-add="n1"] .st')).includes('Sisa 17'));
+  await k.waitForTimeout(3500); await k.screenshot({ path: out + 'e-offline.png' });
+  await kc.setOffline(false); await k.waitForFunction(() => !JSON.parse(localStorage.getItem('ms_outbox') || '[]').length, null, { timeout: 10000 });
+  console.log('OK offline -> antre -> terkirim saat online');
+  await a.click('#nav-side [data-r="riwayat"]'); await a.waitForSelector('[data-void]'); assert.equal((await a.$$('[data-void]')).length, 2);
+  await a.click('#nav-side [data-r="kas"]'); await a.click('[data-kf="keluar"]'); await a.fill('#k-d', 'Gas 2 tabung'); await a.fill('#k-a', '44000'); await a.click('#kas-f button[type=submit]');
+  await a.waitForSelector('text=Gas 2 tabung');
+  await a.click('#nav-side [data-r="laba-rugi"]'); await a.waitForSelector('.fin'); const lr = await a.textContent('.fin'); assert(lr.includes('45.000'), lr);
+  await a.screenshot({ path: out + 'e-lr.png' });
+  await a.click('#nav-side [data-r="neraca"]'); await a.waitForSelector('text=Seimbang ✓'); await a.screenshot({ path: out + 'e-neraca.png' });
+  await a.click('#nav-side [data-r="ekspor"]'); await a.waitForFunction(() => !!window.XLSX);
+  const [dl] = await Promise.all([a.waitForEvent('download'), a.click('[data-ex="all"]')]); console.log('OK unduh', dl.suggestedFilename());
+  await dl.saveAs(out + 'laporan-tes.xlsx');
+  await a.click('#nav-side [data-r="pengguna"]'); await a.click('[data-u-new]'); await a.fill('#u-n', 'Shely'); await a.fill('#u-p', '222222'); await a.click('#u-f button[type=submit]'); await a.waitForSelector('td >> text=Shely');
+  await a.click('#nav-side [data-r="dashboard"]'); await a.waitForTimeout(800); await a.screenshot({ path: out + 'e-dash.png' });
+  await a.click('#nav-side [data-r="sisa-stok"]'); await a.waitForTimeout(300); await a.screenshot({ path: out + 'e-stok.png' });
+  await a.click('#nav-side [data-r="kasir"]'); await a.waitForTimeout(300); await a.screenshot({ path: out + 'e-kasir-d.png' });
+  await a.click('#nav-side [data-r="pengaturan"]'); await a.waitForTimeout(300); await a.screenshot({ path: out + 'e-set.png', fullPage: true });
+  await k.click('#nav-tabs [data-r="riwayat"]'); await k.waitForSelector('[data-rc]'); await k.screenshot({ path: out + 'e-k-riwayat.png' });
+  await k.click('#nav-tabs [data-r="printer"]'); await k.screenshot({ path: out + 'e-k-printer.png' });
+  console.log('ERRORS', JSON.stringify(errs)); await b.close();
+  if (errs.length) process.exit(1);
+})().catch(e => { console.error('GAGAL', e); process.exit(1); });
