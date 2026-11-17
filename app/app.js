@@ -792,7 +792,6 @@ function userSheet(u) {
     try {
       await api('userSave', { user: { id: u.id, nama: $('#u-n').value, pin: $('#u-p').value || undefined, aktif: a ? a.checked : undefined, email: em ? em.value : undefined } });
       closeSheet(); toast('Tersimpan');
-      if (u.id === S.user.id && $('#u-p') === null) { }
       if (u.id === S.user.id) { toast('Sandi diganti, silakan login lagi'); return logout(); }
       LOAD.pengguna();
     } catch (err) { $('#u-err').innerHTML = errBox(err.message); }
