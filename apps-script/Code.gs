@@ -299,7 +299,8 @@ var ACTIONS = {
       var t = key.split('|');
       out.push({ id: 'PJ-' + key, waktu: t[0] + 'T23:59:00', tanggal: t[0], jenis: 'masuk', kategori: 'Penjualan', keterangan: 'Total penjualan ' + METODE_LABEL[t[1]] , jumlah: daily[key], metode: METODE_LABEL[t[1]] || t[1], oleh: 'otomatis', auto: true });
     });
-    out.sort(function (a, b) { return a.waktu < b.waktu ? 1 : -1; });
+    var key = function (k) { return String(k.tanggal) + String(k.waktu).slice(10); };
+    out.sort(function (a, b) { return key(a) < key(b) ? 1 : -1; });
     return out;
   },
 

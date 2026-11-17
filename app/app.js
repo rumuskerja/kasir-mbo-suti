@@ -5,10 +5,12 @@
 /* ======================= UTIL ======================= */
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+// Di mode demo, sesi login disimpan per tab supaya bisa buka Kasir & Admin berdampingan
+const store = (k) => (window.KASIR_DEMO && (k === 'token' || k === 'user')) ? sessionStorage : localStorage;
 const LS = {
-  get(k, d = null) { try { const v = localStorage.getItem('ms_' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('ms_' + k, JSON.stringify(v)); } catch (e) { } },
-  del(k) { try { localStorage.removeItem('ms_' + k); } catch (e) { } }
+  get(k, d = null) { try { const v = store(k).getItem('ms_' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { store(k).setItem('ms_' + k, JSON.stringify(v)); } catch (e) { } },
+  del(k) { try { store(k).removeItem('ms_' + k); } catch (e) { } }
 };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const rp = (n) => 'Rp ' + Math.round(n || 0).toLocaleString('id-ID');
@@ -113,7 +115,7 @@ const ic = (k, s = 18) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" f
 function show(id) { ['setup', 'login', 'app'].forEach(x => $('#' + x).classList.toggle('hidden', x !== id)); }
 
 async function boot() {
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { });
+  if (!window.KASIR_DEMO && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { });
   if (!apiUrl()) return showSetup();
   if (S.token && S.user) { enterApp(); refreshBootstrap(); }
   else showLogin();
@@ -143,7 +145,6 @@ async function showLogin(msg) {
   const sel = $('#lg-user');
   const fill = (list) => { sel.innerHTML = list.length ? list.map(k => `<option value="${esc(k.id)}">${esc(k.nama)}</option>`).join('') : '<option value="">Belum ada kasir</option>'; const last = LS.get('last_kasir'); if (last) sel.value = last; };
   fill(LS.get('kasir_list', []));
-  try { const list = await api('kasirList'); LS.set('kasir_list', list); fill(list); } catch (e) { if (!LS.get('kasir_list', []).length) $('#login-err').innerHTML = errBox(e.message); }
   $('#login-form').onsubmit = async (e) => {
     e.preventDefault();
     const payload = loginRole === 'admin' ? { role: 'admin', email: $('#lg-email').value, pin: $('#lg-pin').value } : { role: 'kasir', id: sel.value, pin: $('#lg-pin').value };
@@ -156,6 +157,7 @@ async function showLogin(msg) {
       enterApp();
     } catch (err) { $('#login-err').innerHTML = errBox(err.message); }
   };
+  try { const list = await api('kasirList'); LS.set('kasir_list', list); fill(list); } catch (e) { if (!LS.get('kasir_list', []).length) $('#login-err').innerHTML = errBox(e.message); }
 }
 function setLoginRole(r) {
   loginRole = r;
@@ -458,6 +460,7 @@ function openReceipt(sale, fresh) {
 }
 async function doPrint(sale, copies) {
   const errEl = $('#rc-err');
+  if (window.KASIR_DEMO) { toast(`Demo: struk ${copies} rangkap dikirim ke printer (${PRINT_LABEL[device.print]})`); return; }
   try {
     if (device.print === 'sistem') { $('#print').innerHTML = (copies === 2 ? [receiptHTML(sale, 'UNTUK PELANGGAN'), receiptHTML(sale, 'ARSIP TOKO')] : [receiptHTML(sale)]).join(''); window.print(); return; }
     const bytes = await Printer.buildReceipt(sale, { copies, settings: S.settings, logo: device.logo === false ? null : 'icons/logo.png', methodLabel });
@@ -706,12 +709,14 @@ BIND.neraca = () => {
 /* ======================= EKSPOR ======================= */
 const exP = mkPeriod('Bulan ini');
 function xlsx(sheets, name) {
+  if (window.KASIR_DEMO && window.KASIR_DEMO.noDownload) { toast(`Demo: file <b>${esc(name)}.xlsx</b> (${sheets.length} sheet) akan terunduh di aplikasi asli`); return; }
   if (!window.XLSX) { toast('Modul Excel belum termuat, coba lagi sebentar'); return; }
   const wb = XLSX.utils.book_new();
   sheets.forEach(([n, rows]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: 'Tidak ada data' }]), n.slice(0, 31)));
   XLSX.writeFile(wb, name + '.xlsx');
 }
 function csv(rows, name) {
+  if (window.KASIR_DEMO && window.KASIR_DEMO.noDownload) { toast(`Demo: file <b>${esc(name)}.csv</b> akan terunduh di aplikasi asli`); return; }
   const head = Object.keys(rows[0] || { Info: '' });
   const body = [head.join(','), ...rows.map(r => head.map(h => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + body], { type: 'text/csv' })); a.download = name + '.csv'; a.click();
@@ -860,10 +865,11 @@ BIND.printer = () => {
   $('#pr-cp').onchange = (e) => { device.copies = e.target.value; saveDevice(); };
   $('#pr-logo').onchange = (e) => { device.logo = e.target.checked; saveDevice(); };
   const test = { no: 'TES-001', waktu: nowWIB(), kasir: S.user.nama, tipe: 'Tes', items: [{ nama: 'Nasi Pecel Pincuk Campur', qty: 1, harga: 15000 }], total: 15000, pays: [{ m: 'tunai', amt: 15000 }], dibayar: 20000, status: 'OK' };
-  $('#pr-test').onclick = (e) => busy(e.currentTarget, async () => { try { if (device.print === 'sistem') { $('#print').innerHTML = receiptHTML(test); window.print(); } else { await doPrintRaw(test); render(); } } catch (err) { $('#pr-err').innerHTML = errBox(err.message); } });
+  $('#pr-test').onclick = (e) => busy(e.currentTarget, async () => { try { if (device.print === 'sistem' && !window.KASIR_DEMO) { $('#print').innerHTML = receiptHTML(test); window.print(); } else { await doPrintRaw(test); render(); } } catch (err) { $('#pr-err').innerHTML = errBox(err.message); } });
   const pick = $('#pr-pick'); if (pick) pick.onclick = () => Printer.btConnect(true).then(() => { toast('Printer tersambung'); render(); }).catch(err => $('#pr-err').innerHTML = errBox(err.message));
 };
 async function doPrintRaw(sale) {
+  if (window.KASIR_DEMO) { toast('Demo: tes cetak dikirim ke printer'); return; }
   const bytes = await Printer.buildReceipt(sale, { copies: 1, settings: S.settings, logo: device.logo === false ? null : 'icons/logo.png', methodLabel });
   if (device.print === 'rawbt') Printer.rawbtPrint(bytes); else { await Printer.btPrint(bytes); toast('Tes cetak terkirim'); }
 }
