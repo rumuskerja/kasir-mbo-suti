@@ -2,7 +2,7 @@ name: Deploy ke GitHub Pages
 on:
   push:
     branches: [main]
-    paths: ['app/**', '.github/workflows/pages.yml']
+    paths: ['app/**', 'demo/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,6 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Sertakan demo di /demo/
+        run: cp -r demo app/demo
       - uses: actions/upload-pages-artifact@v3
         with:
           path: app

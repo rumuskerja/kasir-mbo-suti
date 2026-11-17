@@ -33,5 +33,8 @@ document.querySelector('#login .login-card').insertAdjacentHTML('beforeend','<di
 </script>
 '''
 page = head_extra.strip() + '\n' + body.strip() + '\n' + demo_ui
-open(os.path.join(OUT, 'index.html'), 'w').write(page)
+open(os.path.join(OUT, 'artifact.html'), 'w').write(page)  # untuk Claude Artifact (tanpa kerangka)
+open(os.path.join(OUT, 'index.html'), 'w').write(  # halaman utuh untuk GitHub Pages: /demo/
+    '<!doctype html>\n<html lang="id">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
+    + head_extra.strip() + '\n</head>\n<body>\n' + body.strip() + '\n' + demo_ui + '</body>\n</html>\n')
 print('demo ->', OUT)
